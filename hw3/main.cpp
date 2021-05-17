@@ -34,6 +34,7 @@ int main() {
         RPC::call(buf, outbuf);
         printf("%s\r\n", outbuf);
     }
+
 }
 
 // Make sure the method takes in Arguments and Reply objects.
