@@ -1,3 +1,9 @@
+#ifndef CONFIG_H_
+#define CONFIG_H_
+
+// The number of labels (without negative)
+#define label_num 3
+
 struct Config {
 
   // This must be the same as seq_length in the src/model_train/config.py
