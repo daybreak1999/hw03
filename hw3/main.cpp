@@ -49,7 +49,7 @@ uint8_t tensor_arena[kTensorArenaSize];
 // wifi
 WiFiInterface *wifi;
 InterruptIn btn(USER_BUTTON);
-MQTT::Client<MQTTNetwork, Countdown> *client2;
+MQTT::Client<MQTTNetwork, Countdown> *client_p;
 volatile int message_num = 0;
 volatile int arrivedcount = 0;
 volatile bool closed = false;
@@ -57,9 +57,7 @@ volatile bool closed = false;
 const char* topic = "Mbed";
 
 Thread mqtt_thread1(osPriorityHigh);
-Thread mqtt_thread2(osPriorityHigh);
-EventQueue mqtt_queue1;
-EventQueue mqtt_queue2;
+EventQueue mqtt_queue;
 
 Thread t1;
 Thread t2;
@@ -162,7 +160,7 @@ int main(int argc, char* argv[]) {
     NetworkInterface* net = wifi;
     MQTTNetwork mqttNetwork(net);
     MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
-    client2 = &client;
+    client_p = &client;
 
     //TODO: revise host to your IP
     const char* host = "192.168.128.126";
@@ -192,9 +190,8 @@ int main(int argc, char* argv[]) {
             printf("Fail to subscribe\r\n");
     }
 
-    mqtt_thread1.start(callback(&mqtt_queue1, &EventQueue::dispatch_forever));
-    mqtt_thread2.start(callback(&mqtt_queue2, &EventQueue::dispatch_forever));
-    btn.rise(mqtt_queue1.event(&publish_message, &client));
+    mqtt_thread1.start(callback(&mqtt_queue, &EventQueue::dispatch_forever));
+    btn.rise(mqtt_queue.event(&publish_message, &client));
 
     t1.start(callback(&q1, &EventQueue::dispatch_forever));
     t2.start(callback(&q2, &EventQueue::dispatch_forever));
@@ -225,8 +222,8 @@ int main(int argc, char* argv[]) {
 }
 
 void gestureUI(Arguments *in, Reply *out) {
-
-    printf("gesture UI function");
+    func = 1;
+    mqtt_queue.call(&publish_message, client_p);
     q1.call(&gesture);
     bool success = true;
     char buffer[200];
@@ -243,7 +240,6 @@ void gestureUI(Arguments *in, Reply *out) {
 }
 
 int gesture(void) {
-    func = 1;
     myled1 = 1;
     myled2 = 0;
     bool should_clear_buffer = false;
@@ -307,14 +303,15 @@ int gesture(void) {
         error_reporter->Report("Set up failed\n");
         return -1;
     }
-
+    
+   
+    
     error_reporter->Report("Set up successful...\n");
 
     while (func == 1) {
 
         // Attempt to read new data from the accelerometer
-        got_data = ReadAccelerometer(error_reporter, model_input->data.f,
-                                 input_length, should_clear_buffer);
+        got_data = ReadAccelerometer(error_reporter, model_input->data.f, input_length, should_clear_buffer);
 
         // If there was no new data,
         // don't try to clear the buffer again and wait until next time
@@ -336,10 +333,7 @@ int gesture(void) {
         // Clear the buffer next time we read data
         should_clear_buffer = gesture_index < label_num;
 
-        // Produce an output
-        if (gesture_index < label_num) {
-            error_reporter->Report(config.output_message[gesture_index]);
-        }
+       
         if (pre_gest != gesture_index) change_select = 1;
         if (change_select) {
             uLCD.cls();
@@ -357,7 +351,8 @@ int gesture(void) {
 }
 
 void angleDetection(Arguments *in, Reply *out) {
-    
+    func = 2;
+    mqtt_queue.call(&publish_message, client_p);
     q2.call(&detection);
     bool success = true;
     char buffer[200];
@@ -375,46 +370,46 @@ void angleDetection(Arguments *in, Reply *out) {
 }
 
 void detection(void) {
-    func = 2;
+    
     myled1 = 0;
     myled2 = 1;
-    printf("angle detection function");
 
     int16_t pDataXYZ[3] = {0};
-    int16_t x = 0;
-    int16_t y = 0;
-    int16_t z = 0;
-    int16_t xtemp = 0;
-    int16_t ytemp = 0;
-    int16_t ztemp = 0;
-    int16_t xini = 0;
-    int16_t yini = 0;
-    int16_t zini = 0;
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float xini = 0;
+    float yini = 0;
+    float zini = 0;
 
     // initialization
     myled3 = 1;
-    ThisThread::sleep_for(2s);
+    ThisThread::sleep_for(5s);
     BSP_ACCELERO_AccGetXYZ(pDataXYZ);
-    xini = pDataXYZ[0];
-    yini = pDataXYZ[1];
-    zini = pDataXYZ[2]; 
+    xini = (float)pDataXYZ[0];
+    yini = (float)pDataXYZ[1];
+    zini = (float)pDataXYZ[2]; 
     myled3 = 0;
 
     events_times = 0;
     while(func == 2) {
         BSP_ACCELERO_AccGetXYZ(pDataXYZ);
-        float tem_up, tem_down, tem_cos, tem_angle;
-        
-        tem_up = (float)( pDataXYZ[0] * xini + pDataXYZ[1] * yini + pDataXYZ[2] * zini);
-        tem_down = sqrt((float)(pDataXYZ[0]*pDataXYZ[0] + pDataXYZ[1]*pDataXYZ[1]));
+        float tem_up, tem_down, tem_cos;
+        float tem_angle = 0;
+        x = (float)pDataXYZ[0];
+        y = (float)pDataXYZ[1];
+        z = (float)pDataXYZ[2]; 
+        tem_up = x * xini + y * yini + z * zini;
+        tem_down = sqrt(x*x + y*y + z*z) * sqrt(xini*xini + yini*yini + zini*zini);
         tem_cos = tem_up / tem_down;
         tem_angle = acos(tem_cos) * 180.0 / 3.14;
-        uLCD.cls();
-        uLCD.printf("\ntilt angle:%ff\n", tem_angle);
+        uLCD.locate(1,2);
+        uLCD.printf("tilt angle:%f\n", tem_angle);
         if (tem_angle >= angle[selected]) {
             events_times++;
-            mqtt_queue2.call(&publish_message, client2);
+            mqtt_queue.call(&publish_message, client_p);
         }
+        if(events_times == 10) return ;
         ThisThread::sleep_for(300ms);
     }
 }

@@ -44,6 +44,6 @@ while num != 5:
     mqttc.loop()
     time.sleep(1.5)
     num += 1
-
+    
 # Loop forever, receiving messages
 mqttc.loop_forever()
